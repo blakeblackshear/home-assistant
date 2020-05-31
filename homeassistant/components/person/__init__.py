@@ -1,4 +1,6 @@
 """Support for tracking people."""
+import datetime
+from dateutil.parser import parse
 import logging
 from typing import List, Optional, cast
 
@@ -49,11 +51,13 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType, HomeAssistantType
 from homeassistant.loader import bind_hass
+from homeassistant.util import dt as dt_util
 
 _LOGGER = logging.getLogger(__name__)
 
 ATTR_SOURCE = "source"
 ATTR_USER_ID = "user_id"
+ATTR_LAST_SEEN = "last_seen"
 
 CONF_DEVICE_TRACKERS = "device_trackers"
 CONF_USER_ID = "user_id"
@@ -512,6 +516,44 @@ def ws_list_person(
 
 def _get_latest(prev: Optional[State], curr: State):
     """Get latest state."""
-    if prev is None or curr.last_updated > prev.last_updated:
+    if prev is None or _get_last_seen(curr) > _get_last_seen(prev):
         return curr
     return prev
+
+def _get_last_seen(state: State):
+    """Get the last_seen or the last_update if not available."""
+    last_seen = state.attributes.get(ATTR_LAST_SEEN)
+
+    if last_seen is None:
+        return state.last_updated
+
+    if isinstance(last_seen, datetime.datetime):
+        return last_seen
+
+    if isinstance(last_seen, str):
+        parsed_datetime = None
+        try:
+            parsed_datetime = dt_util.parse_datetime(last_seen)
+        except:
+            _LOGGER.error("Error while parsing datetime from last_seen string for %s.", state.entity_id)
+            pass
+
+        if not parsed_datetime is None:
+            return parsed_datetime
+
+    if isinstance(last_seen, float):
+        try:
+            return dt_util.utc_from_timestamp(last_seen)
+        except:
+            _LOGGER.error("Error while parsing datetime from last_seen float for %s.", state.entity_id)
+            pass
+
+    if isinstance(last_seen, int):
+        try:
+            return dt_util.utc_from_timestamp(float(last_seen))
+        except:
+            _LOGGER.error("Error while parsing datetime from last_seen int for %s.", state.entity_id)
+            pass
+    
+    _LOGGER.error("Unable to parse last_seen property of type %s. Returning last_updated.", type(last_seen))
+    return state.last_updated
