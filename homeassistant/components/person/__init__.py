@@ -480,7 +480,17 @@ class Person(RestoreEntity):
             latest = latest_not_home
 
         if latest:
-            self._parse_source_state(latest)
+            # If a gps type is changing the person from not_home to any zone,
+            # then require a very high accuracy to prevent false positives.
+            # If no gps_accuracy attribute exists, assume its accurate enough.
+            if (latest.attributes.get(ATTR_SOURCE_TYPE) == SOURCE_TYPE_GPS and
+                self._state == STATE_NOT_HOME and
+                latest.state != STATE_NOT_HOME and
+                latest.attributes.get(ATTR_GPS_ACCURACY) and
+                int(latest.attributes.get(ATTR_GPS_ACCURACY)) > 20):
+                pass
+            else:
+                self._parse_source_state(latest)
         else:
             self._state = None
             self._source = None
